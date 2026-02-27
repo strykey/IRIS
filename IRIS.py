@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """IRIS - Intelligent Reconnaissance & Infiltration System | Strykey | v3.1.0 | Custom License"""
 
-import sys, os, time, random, re, webbrowser
-from datetime import datetime
+import sys, os, time, random, re, webbrowser, shutil, hashlib, tempfile, zipfile
+from datetime import datetime, timezone
+from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Tuple, List
 
@@ -79,46 +80,121 @@ def glitch(line, intensity=0.3):
     return ''.join(random.choice(GLITCH_CHARS) if c!=' ' and random.random()<intensity else c for c in line)
 
 
-GITHUB_RAW    = "https://raw.githubusercontent.com/strykey/IRIS/main/iris.py"
+GITHUB_REPO = "https://github.com/strykey/IRIS"
+
 
 def auto_update():
-    import hashlib
-    current_file = os.path.realpath(os.path.abspath(
-        sys.argv[0] if sys.argv[0].endswith('.py') else __file__
-    ))
+    """
+    Compare les fichiers locaux avec le repo GitHub via ZIP.
+    Met à jour les fichiers modifiés et sauvegarde les anciens.
+    """
     print()
     wl(ctr(D("checking for updates...")))
+
     try:
-        r = requests.get(GITHUB_RAW, timeout=10)
-        if r.status_code != 200:
-            wl(ctr(D(f"update server returned {r.status_code}, skipping")))
+        base_dir = Path(os.path.realpath(
+            sys.argv[0] if sys.argv[0].endswith('.py') else __file__
+        )).parent
+    except Exception:
+        wl(ctr(D("update check failed (path error)")))
+        time.sleep(0.3)
+        return
+
+    def _download_zip(url):
+        r = requests.get(url, stream=True, timeout=20)
+        r.raise_for_status()
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix='.zip')
+        with open(tmp.name, 'wb') as fh:
+            for chunk in r.iter_content(8192):
+                if chunk:
+                    fh.write(chunk)
+        return tmp.name
+
+    def _extract_zip(zip_path):
+        td = tempfile.mkdtemp()
+        with zipfile.ZipFile(zip_path, 'r') as z:
+            z.extractall(td)
+        return Path(td)
+
+    def _sha256(path):
+        h = hashlib.sha256()
+        with open(path, 'rb') as fh:
+            for chunk in iter(lambda: fh.read(8192), b''):
+                h.update(chunk)
+        return h.hexdigest()
+
+    def _sync(src_dir, dst_dir):
+        updated = []
+        timestamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
+        backup_base = dst_dir / '.backups' / timestamp
+
+        for src in src_dir.rglob('*'):
+            if src.is_dir():
+                continue
+            rel = src.relative_to(src_dir)
+            if any(part.startswith('.git') for part in rel.parts):
+                continue
+
+            dst = dst_dir / rel
+
+            if dst.exists():
+                try:
+                    if _sha256(src) == _sha256(dst):
+                        continue
+                except Exception:
+                    pass
+                bk = backup_base / rel
+                bk.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(dst, bk)
+
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, dst)
+            updated.append(str(rel))
+
+        return updated
+
+    for branch in ('main', 'master'):
+        zip_url = f"{GITHUB_REPO.rstrip('/')}/archive/refs/heads/{branch}.zip"
+        try:
+            zip_path = _download_zip(zip_url)
+            extracted = _extract_zip(zip_path)
+
+            entries = [p for p in extracted.iterdir() if p.is_dir()]
+            repo_root = entries[0] if entries else extracted
+
+            updated_files = _sync(repo_root, base_dir)
+
+            try:
+                os.unlink(zip_path)
+            except Exception:
+                pass
+
+            if updated_files:
+                wl(ctr(Y(f"updated {len(updated_files)} file(s), restarting...")))
+                time.sleep(0.8)
+                current_file = str(base_dir / Path(
+                    sys.argv[0] if sys.argv[0].endswith('.py') else __file__
+                ).name)
+                os.execv(sys.executable, [sys.executable, current_file] + sys.argv[1:])
+            else:
+                wl(ctr(D("already up to date")))
+                time.sleep(0.35)
+            return
+
+        except requests.exceptions.ConnectionError:
+            wl(ctr(D("offline, skipping update check")))
             time.sleep(0.3)
             return
-        remote_src  = r.text
-        remote_hash = hashlib.sha256(remote_src.encode()).hexdigest()
-        with open(current_file, 'r', encoding='utf-8') as f:
-            local_src = f.read()
-        local_hash = hashlib.sha256(local_src.encode()).hexdigest()
-        if remote_hash == local_hash:
-            wl(ctr(D("already up to date")))
-            time.sleep(0.35)
+        except PermissionError:
+            wl(ctr(Y("no write permission, cannot update")))
+            time.sleep(0.3)
             return
-        wl(ctr(Y("new version found, updating...")))
-        time.sleep(0.4)
-        with open(current_file, 'w', encoding='utf-8') as f:
-            f.write(remote_src)
-        wl(ctr(G("update applied, restarting...")))
-        time.sleep(0.8)
-        os.execv(sys.executable, [sys.executable, current_file] + sys.argv[1:])
-    except requests.exceptions.ConnectionError:
-        wl(ctr(D("offline, skipping update check")))
-        time.sleep(0.3)
-    except PermissionError:
-        wl(ctr(Y("no write permission, cannot update")))
-        time.sleep(0.3)
-    except Exception as e:
-        wl(ctr(D(f"update check failed ({e})")))
-        time.sleep(0.3)
+        except Exception:
+            continue
+
+    wl(ctr(D("update check failed")))
+    time.sleep(0.3)
+
 
 def boot():
     clr(); w=tw(); lines=LOGO.split('\n')
