@@ -82,6 +82,14 @@ iris/
 └── LICENSE           # Custom License
 ```
 
+### HTML scan report
+
+At the end of every scan that finds at least one hit, IRIS automatically generates a `iris_report_TIMESTAMP.html` file in the same folder as the script. It opens in any browser and gives you a full breakdown of what was found.
+
+The report includes a stats bar across the top with total IPs scanned, hits by category, hit rate and scan speed. Below that is a full table of every discovered target: IP as a clickable link, detection type, signature detail, country and city with flag, GPS coordinates, ISP, ASN, timezone, and tags for proxy / hosting / mobile networks. On the side you get a donut chart of the type distribution and a bar chart of the top countries represented in your hits.
+
+There is a dark/light mode switch in the top right corner. The report works fully offline once generated, except for the country flags which load from an external CDN.
+
 ## Legal
 
 This tool performs passive HTTP GET requests against public IP addresses. It does not exploit vulnerabilities, does not attempt authentication, and does not modify any remote system. It is equivalent to typing an IP address into a browser.
@@ -94,3 +102,4 @@ Accessing systems without authorization, even ones with no password, may be ille
 
 
 *"The internet is bigger than what Google shows you."*
+
