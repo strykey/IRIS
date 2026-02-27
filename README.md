@@ -7,10 +7,10 @@ IRIS is a multithreaded reconnaissance tool that probes random public IPs and su
 
 If you want to understand what the internet actually looks like beneath the surface, this is probably the most direct way to do it. No account, no API key, no Shodan subscription. You run a scan, you see what's exposed. That's it.
 
-![Python](https://img.shields.io/badge/python-3.7+-bright_green?style=flat-square)
-![Platform](https://img.shields.io/badge/platform-linux%20%7C%20macOS%20%7C%20windows-bright_green?style=flat-square)
-![License](https://img.shields.io/badge/license-Custom-bright_green?style=flat-square)
-![Version](https://img.shields.io/badge/version-3.1.0-bright_green?style=flat-square)
+![Python](https://img.shields.io/badge/python-3.7+-3572A5?style=flat-square)
+![Platform](https://img.shields.io/badge/platform-linux%20%7C%20macOS%20%7C%20windows-lightgrey?style=flat-square)
+![License](https://img.shields.io/badge/license-Custom-orange?style=flat-square)
+![Version](https://img.shields.io/badge/version-3.1.0-brightgreen?style=flat-square)
 
 ## What it finds
 
@@ -91,5 +91,6 @@ Accessing systems without authorization, even ones with no password, may be ille
 ## Author
 
 **Strykey**
+
 
 *"The internet is bigger than what Google shows you."*
