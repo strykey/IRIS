@@ -78,6 +78,48 @@ def wl(t=''): wr(t+'\n')
 def glitch(line, intensity=0.3):
     return ''.join(random.choice(GLITCH_CHARS) if c!=' ' and random.random()<intensity else c for c in line)
 
+
+GITHUB_RAW    = "https://raw.githubusercontent.com/strykey/IRIS/main/iris.py"
+
+def auto_update():
+    import hashlib
+    current_file = os.path.realpath(os.path.abspath(
+        sys.argv[0] if sys.argv[0].endswith('.py') else __file__
+    ))
+    print()
+    wl(ctr(D("checking for updates...")))
+    try:
+        r = requests.get(GITHUB_RAW, timeout=10)
+        if r.status_code != 200:
+            wl(ctr(D(f"update server returned {r.status_code}, skipping")))
+            time.sleep(0.3)
+            return
+        remote_src  = r.text
+        remote_hash = hashlib.sha256(remote_src.encode()).hexdigest()
+        with open(current_file, 'r', encoding='utf-8') as f:
+            local_src = f.read()
+        local_hash = hashlib.sha256(local_src.encode()).hexdigest()
+        if remote_hash == local_hash:
+            wl(ctr(D("already up to date")))
+            time.sleep(0.35)
+            return
+        wl(ctr(Y("new version found, updating...")))
+        time.sleep(0.4)
+        with open(current_file, 'w', encoding='utf-8') as f:
+            f.write(remote_src)
+        wl(ctr(G("update applied, restarting...")))
+        time.sleep(0.8)
+        os.execv(sys.executable, [sys.executable, current_file] + sys.argv[1:])
+    except requests.exceptions.ConnectionError:
+        wl(ctr(D("offline, skipping update check")))
+        time.sleep(0.3)
+    except PermissionError:
+        wl(ctr(Y("no write permission, cannot update")))
+        time.sleep(0.3)
+    except Exception as e:
+        wl(ctr(D(f"update check failed ({e})")))
+        time.sleep(0.3)
+
 def boot():
     clr(); w=tw(); lines=LOGO.split('\n')
     for _ in range(6):
@@ -99,7 +141,8 @@ def boot():
     wl(ctr(D('─'*min(56,w-4)))); print()
     time.sleep(0.3)
     wl(ctr(G("IRIS online")))
-    print(); time.sleep(0.4)
+    print()
+    time.sleep(0.4)
 
 def banner():
     clr(); w=tw(); print()
@@ -621,6 +664,7 @@ def menu():
                         subtitle=f"[dim]{datetime.now().strftime('%H:%M:%S')}[/]"))
 
 def run():
+    auto_update()
     boot()
     while True:
         banner(); menu()
