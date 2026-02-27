@@ -1,0 +1,42 @@
+IRIS License
+Copyright (c) 2024-2026 Strykey
+All rights reserved.
+
+This software and all associated source code, documentation, assets and files
+(collectively the "Software") are the exclusive intellectual property of Strykey.
+
+PERMITTED
+You may download and run the Software on your own machine for personal,
+non-commercial, educational or research purposes only.
+You may fork the repository and submit contributions via pull request.
+You may create derivative works provided all conditions below are strictly met.
+
+MANDATORY ATTRIBUTION
+This is non-negotiable. Any fork, derivative work, contribution, redistribution
+or public use of this Software must:
+
+  Visibly credit "Strykey" as the original author in the README, UI and source headers
+  Include a direct link to the original repository
+  Clearly state what was changed if the Software was modified
+  Not imply endorsement by or affiliation with Strykey without written permission
+
+Removing, hiding, replacing or obscuring any authorship notice is strictly prohibited
+and constitutes a violation regardless of how minor the modification.
+
+PROHIBITED
+The following are strictly forbidden without prior written permission from Strykey:
+
+  Commercial use of any kind, including selling, sublicensing or integrating the
+  Software into a paid product or service
+  Use of the Software's name or author identity for promotion or endorsement
+  Automated or large-scale deployment in any hosted or cloud infrastructure
+  Use of the Software to facilitate unauthorized access to computer systems
+
+NO WARRANTY
+The Software is provided as is, without warranty of any kind. The author is not
+liable for any damages, legal consequences or issues arising from the use,
+misuse or inability to use the Software. You use it entirely at your own risk.
+
+VIOLATIONS
+Any use not explicitly permitted above constitutes a violation of this license
+and may result in legal action under applicable intellectual property law.
