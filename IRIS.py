@@ -153,6 +153,318 @@ def scan_ip(ip: str) -> Tuple[str,bool,str,str]:
     except requests.exceptions.ConnectionError: return ip,False,"REFUSED","SKIP"
     except:                                     return ip,False,"ERROR","SKIP"
 
+
+def geolocate_hits(hits):
+    ips = [ip for ip,_,_ in hits]
+    geo = {}
+    try:
+        fields = "status,query,country,countryCode,regionName,city,isp,org,as,timezone,lat,lon,mobile,proxy,hosting"
+        for i in range(0, len(ips), 100):
+            batch = ips[i:i+100]
+            r = requests.post(
+                f"http://ip-api.com/batch?fields={fields}",
+                json=batch, timeout=10,
+                headers={"Content-Type":"application/json"}
+            )
+            for d in r.json():
+                if d.get("status") == "success":
+                    geo[d["query"]] = d
+    except Exception:
+        pass
+    return geo
+
+def generate_report(hits, total, elapsed, threads, ts):
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    html_path  = os.path.join(script_dir, f"iris_report_{ts}.html")
+    dt_str     = datetime.now().strftime("%Y-%m-%d  %H:%M:%S")
+
+    geo = geolocate_hits(hits)
+
+    label_colors = {
+        "CAMERA":   "#ff4444",
+        "FLAGGED":  "#ffcc00",
+        "AUTH_REQ": "#ff8800",
+        "IOT":      "#00ff88",
+        "DETECTED": "#00ccff",
+    }
+    label_counts = {}
+    for _, label, _ in hits:
+        label_counts[label] = label_counts.get(label, 0) + 1
+
+    country_counts = {}
+    for ip,_,_ in hits:
+        g = geo.get(ip,{})
+        c = g.get("country","Unknown")
+        country_counts[c] = country_counts.get(c,0)+1
+    top_countries = sorted(country_counts.items(), key=lambda x:-x[1])[:8]
+
+    rows_html = ""
+    for ip, label, reason in hits:
+        color = label_colors.get(label, "#ffffff")
+        url   = f"http://{ip}"
+        g     = geo.get(ip, {})
+        flag  = g.get("countryCode","").lower()
+        flag_img = f'<img src="https://flagcdn.com/16x12/{flag}.png" style="margin-right:5px;vertical-align:middle" onerror="this.style.display=\'none\'">' if flag else ""
+        country  = g.get("country", "")
+        city     = g.get("city", "")
+        isp      = g.get("isp", "")
+        org      = g.get("org","")
+        asn      = g.get("as","")
+        tz       = g.get("timezone","")
+        lat      = g.get("lat","")
+        lon      = g.get("lon","")
+        mobile   = g.get("mobile",False)
+        proxy    = g.get("proxy",False)
+        hosting  = g.get("hosting",False)
+        tags = ""
+        if mobile:  tags += '<span class="tag tag-warn">MOBILE</span>'
+        if proxy:   tags += '<span class="tag tag-danger">PROXY</span>'
+        if hosting: tags += '<span class="tag tag-info">HOSTING</span>'
+
+        geo_cell = ""
+        if country:
+            geo_cell = f'{flag_img}<b>{country}</b>'
+            if city: geo_cell += f" / {city}"
+        loc_cell = f'<span class="coords">{lat},{lon}</span>' if lat else ""
+        isp_cell = f'<span class="isp-txt" title="{org}">{isp[:32]}</span>' if isp else ""
+        as_cell  = f'<span class="as-txt">{asn[:20]}</span>' if asn else ""
+        tz_cell  = f'<small>{tz}</small>' if tz else ""
+
+        rows_html += f"""<tr>
+          <td><a href="{url}" target="_blank" class="ip-link">{ip}</a></td>
+          <td><span class="badge" style="background:{color}20;color:{color};border:1px solid {color}40">{label}</span></td>
+          <td class="detail">{reason}</td>
+          <td class="geo-cell">{geo_cell}<br>{loc_cell}</td>
+          <td class="isp-cell">{isp_cell}<br>{as_cell}</td>
+          <td>{tz_cell}</td>
+          <td>{tags}</td>
+          <td><a href="{url}" target="_blank" class="open-btn">OPEN</a></td>
+        </tr>"""
+
+    labels_js       = str(list(label_counts.keys()))
+    values_js       = str(list(label_counts.values()))
+    colors_js       = str([label_colors.get(l,"#888") for l in label_counts.keys()])
+    country_labels  = str([c for c,_ in top_countries])
+    country_values  = str([v for _,v in top_countries])
+    hit_rate        = f"{len(hits)/total*100:.2f}" if total else "0"
+    scan_rate       = f"{total/elapsed:.1f}" if elapsed else "0"
+    cam_count       = label_counts.get("CAMERA",0)
+    flag_count      = label_counts.get("FLAGGED",0)
+    auth_count      = label_counts.get("AUTH_REQ",0)
+    iot_count       = label_counts.get("IOT",0)+label_counts.get("DETECTED",0)
+    proxy_ips       = sum(1 for ip,_,_ in hits if geo.get(ip,{}).get("proxy"))
+    hosting_ips     = sum(1 for ip,_,_ in hits if geo.get(ip,{}).get("hosting"))
+
+    html = f"""<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>IRIS // {dt_str}</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+*{{margin:0;padding:0;box-sizing:border-box}}
+:root[data-theme="dark"]{{
+  --bg:#080b0d;--bg2:#0d1117;--bg3:#161b22;--bg4:#1c2128;
+  --green:#00ff88;--cyan:#00ccff;--red:#ff4444;--yellow:#ffcc00;--orange:#ff8800;
+  --dim:#3d4450;--dimtext:#6e7681;--text:#c9d1d9;--border:#21262d;
+  --shadow:rgba(0,0,0,.4);--scan:rgba(0,255,136,.015)
+}}
+:root[data-theme="light"]{{
+  --bg:#f6f8fa;--bg2:#ffffff;--bg3:#f0f2f5;--bg4:#e8eaed;
+  --green:#1a7f37;--cyan:#0969da;--red:#cf222e;--yellow:#9a6700;--orange:#bc4c00;
+  --dim:#d0d7de;--dimtext:#57606a;--text:#1f2328;--border:#d0d7de;
+  --shadow:rgba(0,0,0,.08);--scan:transparent
+}}
+body{{background:var(--bg);color:var(--text);font-family:'Courier New',monospace;min-height:100vh;transition:background .3s,color .3s}}
+.scanline{{position:fixed;top:0;left:0;right:0;bottom:0;background:repeating-linear-gradient(0deg,transparent,transparent 2px,var(--scan) 2px,var(--scan) 4px);pointer-events:none;z-index:9999}}
+
+header{{border-bottom:1px solid var(--border);padding:20px 40px;display:flex;align-items:center;justify-content:space-between;background:var(--bg2);position:sticky;top:0;z-index:100;box-shadow:0 1px 8px var(--shadow)}}
+.logo{{font-size:24px;font-weight:700;color:var(--green);letter-spacing:8px;text-shadow:0 0 20px rgba(0,255,136,.3)}}
+[data-theme="light"] .logo{{text-shadow:none}}
+.logo sub{{font-size:10px;color:var(--dimtext);letter-spacing:2px;display:block;margin-top:2px}}
+.header-right{{display:flex;align-items:center;gap:20px}}
+.meta{{text-align:right;font-size:11px;color:var(--dimtext);line-height:1.9}}
+.meta b{{color:var(--text)}}
+
+.theme-toggle{{background:var(--bg3);border:1px solid var(--border);border-radius:20px;padding:6px 14px;cursor:pointer;font-family:'Courier New',monospace;font-size:11px;color:var(--dimtext);display:flex;align-items:center;gap:6px;transition:.2s;letter-spacing:1px}}
+.theme-toggle:hover{{border-color:var(--green);color:var(--green)}}
+
+main{{padding:28px 40px;max-width:1500px;margin:0 auto}}
+
+.stats-grid{{display:grid;grid-template-columns:repeat(8,1fr);gap:10px;margin-bottom:28px}}
+.stat{{background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:16px 12px;text-align:center;position:relative;overflow:hidden;transition:.2s;cursor:default}}
+.stat:hover{{transform:translateY(-2px);box-shadow:0 4px 16px var(--shadow)}}
+.stat::after{{content:"";position:absolute;top:0;left:0;right:0;height:2px;background:var(--green)}}
+.stat.red::after{{background:var(--red)}} .stat.yellow::after{{background:var(--yellow)}}
+.stat.orange::after{{background:var(--orange)}} .stat.cyan::after{{background:var(--cyan)}}
+.stat.dim::after{{background:var(--dimtext)}}
+.stat-val{{font-size:26px;font-weight:700;color:var(--green);line-height:1;font-variant-numeric:tabular-nums}}
+.stat.red .stat-val{{color:var(--red)}} .stat.yellow .stat-val{{color:var(--yellow)}}
+.stat.orange .stat-val{{color:var(--orange)}} .stat.cyan .stat-val{{color:var(--cyan)}}
+.stat.dim .stat-val{{color:var(--dimtext)}}
+.stat-label{{font-size:9px;color:var(--dimtext);text-transform:uppercase;letter-spacing:2px;margin-top:5px}}
+
+.grid-main{{display:grid;grid-template-columns:1fr 340px;gap:20px;margin-bottom:20px}}
+.grid-side{{display:flex;flex-direction:column;gap:16px}}
+
+.card{{background:var(--bg2);border:1px solid var(--border);border-radius:6px;overflow:hidden}}
+.card-header{{padding:10px 18px;border-bottom:1px solid var(--border);font-size:10px;text-transform:uppercase;letter-spacing:3px;color:var(--dimtext);display:flex;align-items:center;gap:8px}}
+.card-header::before{{content:"";width:5px;height:5px;border-radius:50%;background:var(--green);flex-shrink:0}}
+.chart-wrap{{padding:20px;height:220px;display:flex;align-items:center;justify-content:center}}
+
+.table-wrap{{overflow-x:auto}}
+table{{width:100%;border-collapse:collapse;font-size:12px;white-space:nowrap}}
+thead tr{{border-bottom:2px solid var(--border)}}
+th{{padding:8px 14px;text-align:left;font-size:9px;text-transform:uppercase;letter-spacing:2px;color:var(--dimtext);font-weight:500;background:var(--bg3)}}
+tbody tr{{border-bottom:1px solid var(--border);transition:.1s}}
+tbody tr:hover{{background:var(--bg3)}}
+td{{padding:10px 14px;vertical-align:middle}}
+.ip-link{{color:var(--cyan);text-decoration:none;font-family:'Courier New',monospace;font-size:13px;font-weight:600}}
+.ip-link:hover{{color:var(--green);text-decoration:underline}}
+.badge{{font-size:9px;padding:3px 7px;border-radius:3px;font-family:'Courier New',monospace;letter-spacing:1px;font-weight:700;white-space:nowrap}}
+.detail{{color:var(--dimtext);font-size:11px}}
+.geo-cell{{font-size:11px;color:var(--text)}}
+.coords{{font-size:10px;color:var(--dimtext)}}
+.isp-cell{{font-size:11px;color:var(--dimtext)}}
+.as-txt{{font-size:10px}}
+.tag{{font-size:9px;padding:2px 5px;border-radius:2px;margin-right:3px;font-weight:700;letter-spacing:.5px}}
+.tag-warn{{background:rgba(255,204,0,.15);color:var(--yellow);border:1px solid rgba(255,204,0,.3)}}
+.tag-danger{{background:rgba(255,68,68,.15);color:var(--red);border:1px solid rgba(255,68,68,.3)}}
+.tag-info{{background:rgba(0,204,255,.15);color:var(--cyan);border:1px solid rgba(0,204,255,.3)}}
+.open-btn{{color:var(--green);text-decoration:none;font-size:9px;letter-spacing:2px;border:1px solid rgba(0,255,136,.2);padding:4px 8px;border-radius:3px;transition:.15s;white-space:nowrap}}
+.open-btn:hover{{background:var(--green);color:#000}}
+
+.params-grid{{padding:14px 18px;font-size:11px;line-height:2;color:var(--dimtext)}}
+.param-row{{display:flex;justify-content:space-between}}
+.param-row b{{color:var(--text)}}
+
+.bar-item{{margin-bottom:10px}}
+.bar-label{{font-size:10px;color:var(--dimtext);display:flex;justify-content:space-between;margin-bottom:3px}}
+.bar-label b{{color:var(--text)}}
+.bar-bg{{background:var(--bg3);border-radius:2px;height:6px;overflow:hidden}}
+.bar-fill{{height:100%;border-radius:2px;background:var(--green);transition:width .6s ease}}
+
+footer{{border-top:1px solid var(--border);padding:18px 40px;text-align:center;font-size:10px;color:var(--dimtext);margin-top:32px;letter-spacing:1px}}
+@media(max-width:1200px){{.stats-grid{{grid-template-columns:repeat(4,1fr)}}.grid-main{{grid-template-columns:1fr}}}}
+@media(max-width:700px){{.stats-grid{{grid-template-columns:repeat(2,1fr)}};header{{padding:16px 20px}};main{{padding:20px}}}}
+</style>
+</head>
+<body>
+<div class="scanline"></div>
+<header>
+  <div>
+    <div class="logo">IRIS <span style="color:var(--dimtext);">//</span> REPORT
+      <sub>INTELLIGENT RECONNAISSANCE & INFILTRATION SYSTEM</sub>
+    </div>
+  </div>
+  <div class="header-right">
+    <button class="theme-toggle" onclick="toggleTheme()" id="themeBtn">☀ LIGHT</button>
+    <div class="meta">
+      <div><b>DATE</b>&nbsp;&nbsp;{dt_str}</div>
+      <div><b>SESSION</b>&nbsp;&nbsp;{ts}</div>
+      <div><b>AUTHOR</b>&nbsp;&nbsp;Strykey</div>
+    </div>
+  </div>
+</header>
+
+<main>
+<div class="stats-grid">
+  <div class="stat"><div class="stat-val">{total:,}</div><div class="stat-label">IPs Scanned</div></div>
+  <div class="stat"><div class="stat-val">{len(hits)}</div><div class="stat-label">Hits Total</div></div>
+  <div class="stat red"><div class="stat-val">{cam_count}</div><div class="stat-label">Cameras</div></div>
+  <div class="stat yellow"><div class="stat-val">{flag_count}</div><div class="stat-label">Flagged</div></div>
+  <div class="stat orange"><div class="stat-val">{auth_count}</div><div class="stat-label">Auth Req</div></div>
+  <div class="stat cyan"><div class="stat-val">{iot_count}</div><div class="stat-label">IoT</div></div>
+  <div class="stat dim"><div class="stat-val">{proxy_ips}</div><div class="stat-label">Proxy IPs</div></div>
+  <div class="stat cyan"><div class="stat-val">{hit_rate}%</div><div class="stat-label">Hit Rate</div></div>
+</div>
+
+<div class="grid-main">
+  <div class="card">
+    <div class="card-header">Discovered targets</div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>IP</th><th>Type</th><th>Signature</th>
+          <th>Location</th><th>ISP / ASN</th><th>Timezone</th><th>Tags</th><th></th>
+        </tr></thead>
+        <tbody>{rows_html}</tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="grid-side">
+    <div class="card">
+      <div class="card-header">Type distribution</div>
+      <div class="chart-wrap"><canvas id="donut"></canvas></div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">Top countries</div>
+      <div style="padding:16px 18px">
+        {"".join(f'<div class="bar-item"><div class="bar-label"><span><b>{c}</b></span><span>{v}</span></div><div class="bar-bg"><div class="bar-fill" style="width:{int(v/max(vv for _,vv in top_countries)*100)}%"></div></div></div>' for c,v in top_countries) if top_countries else "<div style='padding:8px;color:var(--dimtext);font-size:11px'>No geo data</div>"}
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">Scan parameters</div>
+      <div class="params-grid">
+        <div class="param-row"><span>TARGETS</span><b>{total:,}</b></div>
+        <div class="param-row"><span>THREADS</span><b>{threads}</b></div>
+        <div class="param-row"><span>TIMEOUT</span><b>0.8s</b></div>
+        <div class="param-row"><span>ELAPSED</span><b>{elapsed:.2f}s</b></div>
+        <div class="param-row"><span>SCAN RATE</span><b>{scan_rate} ip/s</b></div>
+        <div class="param-row"><span>HIT RATE</span><b>{hit_rate}%</b></div>
+        <div class="param-row"><span>GEO RESOLVED</span><b>{len(geo)}/{len(hits)}</b></div>
+        <div class="param-row"><span>HOSTING IPs</span><b>{hosting_ips}</b></div>
+      </div>
+    </div>
+  </div>
+</div>
+</main>
+
+<footer>IRIS v3.1.0&nbsp;&nbsp;·&nbsp;&nbsp;Strykey&nbsp;&nbsp;·&nbsp;&nbsp;{dt_str}&nbsp;&nbsp;·&nbsp;&nbsp;{len(hits)} targets across {total:,} probed IPs</footer>
+
+<script>
+function toggleTheme(){{
+  var r=document.documentElement, t=r.getAttribute("data-theme");
+  var isDark=t==="dark";
+  r.setAttribute("data-theme",isDark?"light":"dark");
+  document.getElementById("themeBtn").textContent=isDark?"☾ DARK":"☀ LIGHT";
+  updateCharts(isDark);
+}}
+var textColor=function(){{return getComputedStyle(document.documentElement).getPropertyValue("--dimtext").trim()}};
+var borderColor=function(){{return getComputedStyle(document.documentElement).getPropertyValue("--border").trim()}};
+
+var donutChart = new Chart(document.getElementById("donut"),{{
+  type:"doughnut",
+  data:{{
+    labels:{labels_js},
+    datasets:[{{data:{values_js},backgroundColor:{colors_js}.map(c=>c+"33"),borderColor:{colors_js},borderWidth:2,hoverOffset:6}}]
+  }},
+  options:{{
+    responsive:true,maintainAspectRatio:false,
+    plugins:{{
+      legend:{{position:"bottom",labels:{{color:"#6e7681",font:{{family:"Courier New",size:10}},padding:10,boxWidth:10}}}},
+      tooltip:{{backgroundColor:"#161b22",borderColor:"#21262d",borderWidth:1,titleColor:"#00ff88",bodyColor:"#c9d1d9",titleFont:{{family:"Courier New"}},bodyFont:{{family:"Courier New"}}}}
+    }},
+    cutout:"68%"
+  }}
+}});
+
+function updateCharts(wasDark){{
+  var nc=wasDark?"#57606a":"#6e7681";
+  donutChart.options.plugins.legend.labels.color=nc;
+  donutChart.update();
+}}
+</script>
+</body></html>"""
+
+    with open(html_path, "w", encoding="utf-8") as f:
+        f.write(html)
+    return html_path
+
 LSTYLE={"CAMERA":"bold red","FLAGGED":"bold yellow","AUTH_REQ":"yellow","IOT":"bright_green","DETECTED":"bright_green"}
 
 def scan_module():
@@ -235,13 +547,19 @@ def scan_module():
         warn("No targets found")
         try: os.remove(fname)
         except: pass
-    elif not auto_open:
+    else:
+        html_path=generate_report(hits,total,elapsed,threads,ts)
+        ok(f"Report: {os.path.basename(html_path)}")
+        if not auto_open:
+            print()
+            if ask("Open all hits in browser","n").lower()=='y':
+                for ip,_,_ in hits:
+                    try: webbrowser.open(f"http://{ip}",new=2); time.sleep(0.2)
+                    except: pass
+                ok("Opened")
         print()
-        if ask("Open all hits in browser","n").lower()=='y':
-            for ip,_,_ in hits:
-                try: webbrowser.open(f"http://{ip}",new=2); time.sleep(0.2)
-                except: pass
-            ok("Opened")
+        if ask("Open HTML report","y").lower()=='y':
+            webbrowser.open(f"file://{html_path}")
     print(); wr(f"  {D('Press ENTER…')}"); input()
 
 def opener_module():
