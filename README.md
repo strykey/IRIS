@@ -81,11 +81,11 @@ iris/
 ├── README.md         # This file
 └── LICENSE           # Custom License
 ```
-### Updates :
-## Auto-updater
+## Updates :
+### - Auto-updater
 IRIS checks for updates automatically every time it starts. It downloads the latest version of the repo from GitHub, compares each file against your local copy using SHA-256 hashes, and replaces only the files that have changed. A backup of any overwritten file is saved in a `.backups/` folder next to the script before anything is touched. If an update is applied, IRIS restarts itself automatically so you are always running the latest version without doing anything manually. If you are offline or GitHub is unreachable, the check is skipped silently and IRIS starts normally.
 
-### HTML scan report
+### - HTML scan report
 
 At the end of every scan that finds at least one hit, IRIS automatically generates a `iris_report_TIMESTAMP.html` file in the same folder as the script. It opens in any browser and gives you a full breakdown of what was found.
 
@@ -105,6 +105,7 @@ Accessing systems without authorization, even ones with no password, may be ille
 
 
 *"The internet is bigger than what Google shows you."*
+
 
 
 
