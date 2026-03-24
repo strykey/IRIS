@@ -1,48 +1,64 @@
 # IRIS
-**Intelligent Reconnaissance & Infiltration System**
-
-> This tool is provided for educational and research purposes only. Passive HTTP scanning of public IPs is legal in most jurisdictions. Accessing systems without authorization is not. Use responsibly.
-
-IRIS is a multithreaded reconnaissance tool that probes random public IPs and surfaces exposed devices in real time. Cameras with no password, routers on default credentials, forgotten admin panels, live video streams, open DVRs. All of it is out there, sitting on the public internet, waiting. IRIS finds it.
-
-If you want to understand what the internet actually looks like beneath the surface, this is probably the most direct way to do it. No account, no API key, no Shodan subscription. You run a scan, you see what's exposed. That's it.
+### Intelligent Reconnaissance & Inspection Scanner
 
 ![Python](https://img.shields.io/badge/python-3.7+-3572A5?style=flat-square)
 ![Platform](https://img.shields.io/badge/platform-linux%20%7C%20macOS%20%7C%20windows-lightgrey?style=flat-square)
 ![License](https://img.shields.io/badge/license-Custom-orange?style=flat-square)
 ![Version](https://img.shields.io/badge/version-3.1.0-brightgreen?style=flat-square)
 
+> **For educational and research purposes only.**
+> Passive HTTP scanning of public IPs is legal in most jurisdictions.
+> Accessing systems without authorization is not. Use responsibly.
+
+IRIS is a multithreaded network research tool that scans random public IPv4 addresses and maps exposed HTTP services in real time. Think of it as a personal, lightweight version of what [Shodan](https://shodan.io) or [Censys](https://censys.io) do at a much larger scale. It sends a plain GET request to each IP, reads the response, and tells you what kind of device answered.
+
+No account. No API key. Just raw network I/O and a signature database.
+
+---
+
+## Table of Contents
+
+- [What it finds](#what-it-finds)
+- [Why this exists](#why-this-exists)
+- [Installation](#installation)
+- [Usage](#usage)
+- [Scan Report](#scan-report)
+- [Auto-updater](#auto-updater)
+- [Project structure](#project-structure)
+- [Legal](#legal)
+
+---
+
 ## What it finds
 
-IRIS sends a plain HTTP request to each IP and analyzes the response. It uses a database of 57 camera signatures, 32 IoT keywords and 49 vulnerability patterns to classify what comes back. Each hit is categorized:
+IRIS classifies every response into one of five categories based on response headers and page content. No authentication is ever attempted, no stream is accessed, no system is modified.
 
-**CAMERA** confirms a live camera or video stream. Hikvision, Dahua, Axis, Foscam, Reolink, Amcrest and 50+ other brands are in the database. When you get one of these you can usually open the IP directly in a browser and see the stream.
+| Category | What it means |
+|:---:|:---|
+| `CAMERA` | Response matches a known camera signature (Hikvision, Dahua, Axis, Foscam, Reolink, Amcrest and 50+ others). Detection only, no stream is opened. |
+| `IOT` | Router, modem, smart home hub or embedded web interface with a recognizable signature. |
+| `AUTH_REQ` | Device responds with an authentication page. IRIS logs it exists. No login is attempted. |
+| `FLAGGED` | Multiple exposure indicators in a single response (open directory listing, exposed config endpoint, etc). Logged for research only. |
+| `DETECTED` | Content or title match for a known device type that does not fit the other categories. |
 
-**FLAGGED** means multiple vulnerability patterns showed up at once. Default credentials, exposed config files, open directory listings. These are the interesting ones.
+All results are automatically saved to a timestamped file at the end of each scan.
 
-**AUTH_REQ** is a protected login page on an IoT device. Most of the time the credentials are still admin/admin or admin/password. IRIS flags it, you decide what to do with it.
+---
 
-**IOT** covers routers, modems, smart home devices, embedded web interfaces. Anything that responds like a networked device but doesn't fit the camera category.
+## Why this exists
 
-**DETECTED** is a content or title match for a known device type that doesn't fall into the other categories.
+Internet-wide scanning is a well-studied area of network security research. Tools like [Shodan](https://shodan.io), [Censys](https://censys.io) and [ZMap](https://zmap.io) have been doing this for years and are used by universities, security teams and governments to understand the attack surface of the public internet.
 
-Every hit is saved to a timestamped file automatically. You never lose results.
+IRIS started as a learning project to understand how that kind of scanning works from the inside:
 
-## Recommended setup
+- How to handle multithreaded network I/O in Python at scale
+- How HTTP response fingerprinting and signature matching works
+- How exposed services are actually distributed across the IPv4 space
+- How to build a clean reporting pipeline from raw scan data
 
-The best way to run IRIS is 10 000 IPs at 100 threads. That's the sweet spot.
+The output is the same kind of information you would get from a free Shodan query. The goal is understanding the internet, not accessing anything on it.
 
-100 threads keeps the scan stable without hammering your connection or running into timeout cascades. At that thread count you'll scan 10 000 IPs in roughly 3 to 5 minutes depending on your internet speed. In a single session you'll typically find anywhere from a handful to a few dozen hits depending on luck with the random IP pool.
-
-If you want to go faster you can push threads up to 150 or 200. The results stay accurate, it just gets noisier on slow connections. Going above 200 threads starts producing more false timeouts than it's worth.
-
-For a serious session, run 3 or 4 consecutive scans of 10 000 IPs. By the end you'll have scanned 40 000 random public IPs and have a solid list of exposed devices to browse through.
-
-## Why this is actually the deep web
-
-People talk about the deep web like it requires Tor and hidden services. The reality is that the most interesting stuff is sitting on the regular internet, completely public, just not indexed anywhere. Nobody is going to Google "Hikvision default password" and find your neighbor's outdoor camera. But it's there, responding to HTTP requests, accessible to anyone who looks.
-
-IRIS looks. At scale. Across the entire IPv4 space, randomly. Every scan is different because the IPs are random. You never know if the next batch will include a warehouse camera in Eastern Europe, a router admin panel in Brazil, or a live feed from someone's front door in the US. That's what makes it compelling as an exploration tool rather than just a security scanner.
+---
 
 ## Installation
 
@@ -53,24 +69,55 @@ pip install -r requirements.txt
 python iris.py
 ```
 
-## Requirements
-
-Python 3.7 or higher and an internet connection. Works on Linux, macOS and Windows.
+**Requirements**
 
 ```
 requests
 rich
 ```
 
-That's the entire dependency list. No heavy frameworks, no system-level requirements.
+Python 3.7 or higher. Works on Linux, macOS and Windows. Two dependencies, that's it.
+
+---
 
 ## Usage
 
-Run the script and you'll get the menu. Select Deep Scan, enter your target count (10 000 recommended) and thread count (100 recommended), and let it run. The progress bar shows hits in real time as they come in, color coded by category.
+Run the script and you get a menu. Pick **Deep Scan**, enter a target IP count and a thread count, and let it run. Results show up in real time, color coded by category.
 
-When the scan finishes you get a summary and a prompt to open all hits in your browser if you want. The results file is always saved regardless.
+**Recommended starting point:** 10 000 IPs at 100 threads. That's a good balance between coverage and stability on a typical home connection and takes around 3 to 5 minutes.
 
-For the Batch Opener, just point it at any saved results file and it'll open every IP in a new tab with a configurable delay between them.
+```
+[ Deep Scan ]
+  Target IPs   : 10000
+  Threads      : 100
+  Estimated    : ~4 min
+```
+
+When the scan finishes, results are saved automatically and you get a prompt to open everything in the browser via the Batch Opener.
+
+---
+
+## Scan Report
+
+At the end of every scan that finds at least one hit, IRIS generates a `iris_report_TIMESTAMP.html` file. Open it in any browser.
+
+The report includes:
+
+- **Stats bar** at the top: total IPs scanned, hits by category, hit rate, scan speed
+- **Full results table**: IP (clickable), detection type, signature detail, country, city, ISP, ASN, timezone, proxy/hosting/mobile tags
+- **Donut chart** of detection type distribution
+- **Bar chart** of top countries in the results
+- **Dark / light mode toggle** in the top right corner
+
+The report works fully offline once generated.
+
+---
+
+## Auto-updater
+
+Every time IRIS starts, it checks GitHub for a newer version by comparing local file hashes (SHA-256) against the latest release. Only files that actually changed get replaced. Any overwritten file is backed up to `.backups/` first. If you are offline or GitHub is unreachable, the check is skipped silently and IRIS starts normally.
+
+---
 
 ## Project structure
 
@@ -79,33 +126,23 @@ iris/
 ├── iris.py           # Main application
 ├── requirements.txt  # Dependencies
 ├── README.md         # This file
-└── LICENSE           # Custom License
+└── LICENSE           # License
 ```
-## Updates :
-### - Auto-updater
-IRIS checks for updates automatically every time it starts. It downloads the latest version of the repo from GitHub, compares each file against your local copy using SHA-256 hashes, and replaces only the files that have changed. A backup of any overwritten file is saved in a `.backups/` folder next to the script before anything is touched. If an update is applied, IRIS restarts itself automatically so you are always running the latest version without doing anything manually. If you are offline or GitHub is unreachable, the check is skipped silently and IRIS starts normally.
 
-### - HTML scan report
-
-At the end of every scan that finds at least one hit, IRIS automatically generates a `iris_report_TIMESTAMP.html` file in the same folder as the script. It opens in any browser and gives you a full breakdown of what was found.
-
-The report includes a stats bar across the top with total IPs scanned, hits by category, hit rate and scan speed. Below that is a full table of every discovered target: IP as a clickable link, detection type, signature detail, country and city with flag, GPS coordinates, ISP, ASN, timezone, and tags for proxy / hosting / mobile networks. On the side you get a donut chart of the type distribution and a bar chart of the top countries represented in your hits.
-
-There is a dark/light mode switch in the top right corner. The report works fully offline once generated, except for the country flags which load from an external CDN.
+---
 
 ## Legal
 
-This tool performs passive HTTP GET requests against public IP addresses. It does not exploit vulnerabilities, does not attempt authentication, and does not modify any remote system. It is equivalent to typing an IP address into a browser.
+IRIS performs passive HTTP GET requests against public IP addresses. It does not exploit vulnerabilities, does not attempt authentication, and does not modify any remote system. It is equivalent to typing an IP address into your browser's address bar.
 
-Accessing systems without authorization, even ones with no password, may be illegal depending on your jurisdiction. IRIS is a reconnaissance and research tool. The developers are not responsible for how you use it.
+Passive scanning of public IP ranges is legal in most jurisdictions. Laws vary by country and users are responsible for complying with the rules that apply to their location.
+
+Accessing any system without the owner's authorization, including systems with no password set, may be illegal under laws including the Computer Fraud and Abuse Act (US), the Computer Misuse Act (UK), and the French Code penal Art. 323-1. IRIS detects and catalogs. What you do with the results is on you.
+
+---
 
 ## Author
 
 **Strykey**
 
-
 *"The internet is bigger than what Google shows you."*
-
-
-
-
